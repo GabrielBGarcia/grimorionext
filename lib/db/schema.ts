@@ -2,6 +2,7 @@ import {
   pgTable, text, timestamp, boolean,
   integer, real, jsonb, pgEnum,
 } from 'drizzle-orm/pg-core'
+import { relations } from 'drizzle-orm'
 
 export const userRoleEnum   = pgEnum('user_role',   ['player', 'master'])
 export const memberRoleEnum = pgEnum('member_role', ['master', 'player'])
@@ -79,13 +80,13 @@ export const campaignMember = pgTable('campaign_member', {
 
 // ── Personagem ────────────────────────────────────────────────────────────────
 
-export const character = pgTable('character', {
+export const characters = pgTable('character', {
   id:             text('id').primaryKey(),
   userId:         text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
   campaignId:     text('campaign_id').references(() => campaign.id, { onDelete: 'set null' }),
   name:           text('name').notNull(),
   race:           text('race').notNull().default('Humano'),
-  characterClass: text('class').notNull().default('Guerreiro'),
+  class:          text('class').notNull().default('Guerreiro'),
   subclass:       text('subclass'),
   background:     text('background'),
   alignment:      text('alignment'),
@@ -121,8 +122,6 @@ export const character = pgTable('character', {
   spellSlotsUsed:      jsonb('spell_slots_used').default({}),
   knownSpells:         jsonb('known_spells').default([]),
   preparedSpells:      jsonb('prepared_spells').default([]),
-  inventory:           jsonb('inventory').default([]),
-  currency:            jsonb('currency').default({ pp: 0, gp: 0, ep: 0, sp: 0, cp: 0 }),
   feats:               jsonb('feats').default([]),
   resistances:         jsonb('resistances').default([]),
   featuresAndTraits:   jsonb('features_and_traits').default([]),
@@ -133,8 +132,31 @@ export const character = pgTable('character', {
   backstory:           text('backstory'),
   notes:               text('notes'),
   equipment:           text('equipment'),
+  // Currency
+  pp:                  integer('pp').default(0),
+  gp:                  integer('gp').default(0),
+  ep:                  integer('ep').default(0),
+  sp:                  integer('sp').default(0),
+  cp:                  integer('cp').default(0),
   createdAt:           timestamp('createdAt').notNull().defaultNow(),
   updatedAt:           timestamp('updatedAt').notNull().defaultNow(),
+})
+
+// ── Inventário ────────────────────────────────────────────────────────────────
+
+export const inventoryItems = pgTable('inventory_item', {
+  id:          text('id').primaryKey(),
+  characterId: text('character_id').notNull().references(() => characters.id, { onDelete: 'cascade' }),
+  name:        text('name').notNull(),
+  description: text('description'),
+  quantity:    integer('quantity').default(1),
+  weight:      real('weight').default(0),
+  value:       text('value'),
+  category:    text('category').default('misc'),
+  isEquipped:  boolean('is_equipped').default(false),
+  isAttuned:   boolean('is_attuned').default(false),
+  createdAt:   timestamp('createdAt').notNull().defaultNow(),
+  updatedAt:   timestamp('updatedAt').notNull().defaultNow(),
 })
 
 // ── Homebrew ──────────────────────────────────────────────────────────────────
@@ -204,13 +226,109 @@ export const homebrewClass = pgTable('homebrew_class', {
   updatedAt:      timestamp('updatedAt').notNull().defaultNow(),
 })
 
+// ── Relations ─────────────────────────────────────────────────────────────────
+
+export const userRelations = relations(user, ({ many }) => ({
+  campaigns: many(campaign),
+  memberships: many(campaignMember),
+  characters: many(characters),
+}))
+
+export const campaignRelations = relations(campaign, ({ one, many }) => ({
+  master: one(user, {
+    fields: [campaign.masterId],
+    references: [user.id],
+  }),
+  members: many(campaignMember),
+  characters: many(characters),
+  homebrewSpells: many(homebrewSpell),
+  homebrewItems: many(homebrewItem),
+  homebrewRaces: many(homebrewRace),
+  homebrewClasses: many(homebrewClass),
+}))
+
+export const campaignMemberRelations = relations(campaignMember, ({ one }) => ({
+  campaign: one(campaign, {
+    fields: [campaignMember.campaignId],
+    references: [campaign.id],
+  }),
+  user: one(user, {
+    fields: [campaignMember.userId],
+    references: [user.id],
+  }),
+}))
+
+export const characterRelations = relations(characters, ({ one, many }) => ({
+  user: one(user, {
+    fields: [characters.userId],
+    references: [user.id],
+  }),
+  campaign: one(campaign, {
+    fields: [characters.campaignId],
+    references: [campaign.id],
+  }),
+  inventory: many(inventoryItems),
+}))
+
+export const inventoryItemRelations = relations(inventoryItems, ({ one }) => ({
+  character: one(characters, {
+    fields: [inventoryItems.characterId],
+    references: [characters.id],
+  }),
+}))
+
+export const homebrewSpellRelations = relations(homebrewSpell, ({ one }) => ({
+  campaign: one(campaign, {
+    fields: [homebrewSpell.campaignId],
+    references: [campaign.id],
+  }),
+  creator: one(user, {
+    fields: [homebrewSpell.createdBy],
+    references: [user.id],
+  }),
+}))
+
+export const homebrewItemRelations = relations(homebrewItem, ({ one }) => ({
+  campaign: one(campaign, {
+    fields: [homebrewItem.campaignId],
+    references: [campaign.id],
+  }),
+  creator: one(user, {
+    fields: [homebrewItem.createdBy],
+    references: [user.id],
+  }),
+}))
+
+export const homebrewRaceRelations = relations(homebrewRace, ({ one }) => ({
+  campaign: one(campaign, {
+    fields: [homebrewRace.campaignId],
+    references: [campaign.id],
+  }),
+  creator: one(user, {
+    fields: [homebrewRace.createdBy],
+    references: [user.id],
+  }),
+}))
+
+export const homebrewClassRelations = relations(homebrewClass, ({ one }) => ({
+  campaign: one(campaign, {
+    fields: [homebrewClass.campaignId],
+    references: [campaign.id],
+  }),
+  creator: one(user, {
+    fields: [homebrewClass.createdBy],
+    references: [user.id],
+  }),
+}))
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export type User           = typeof user.$inferSelect
 export type Campaign       = typeof campaign.$inferSelect
 export type CampaignMember = typeof campaignMember.$inferSelect
-export type Character      = typeof character.$inferSelect
-export type NewCharacter   = typeof character.$inferInsert
+export type Character      = typeof characters.$inferSelect
+export type NewCharacter   = typeof characters.$inferInsert
+export type InventoryItem  = typeof inventoryItems.$inferSelect
 export type HomebrewSpell  = typeof homebrewSpell.$inferSelect
 export type HomebrewItem   = typeof homebrewItem.$inferSelect
 export type HomebrewRace   = typeof homebrewRace.$inferSelect
