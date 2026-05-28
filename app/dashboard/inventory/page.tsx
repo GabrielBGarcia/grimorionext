@@ -23,17 +23,20 @@ export default async function InventoryPage() {
   })
 
   const formatCurrency = (char: typeof userCharacters[0]) => {
-    const parts = []
-    if (char.pp && char.pp > 0) parts.push(`${char.pp} PP`)
-    if (char.gp && char.gp > 0) parts.push(`${char.gp} PO`)
-    if (char.ep && char.ep > 0) parts.push(`${char.ep} PE`)
-    if (char.sp && char.sp > 0) parts.push(`${char.sp} PP`)
-    if (char.cp && char.cp > 0) parts.push(`${char.cp} PC`)
-    return parts.length > 0 ? parts.join(', ') : 'Sem dinheiro'
-  }
+  const parts = []
+  const money = char.currency || {} 
+  
+  if (money.pp && money.pp > 0) parts.push(`${money.pp} PP`)
+  if (money.gp && money.gp > 0) parts.push(`${money.gp} PO`)
+  if (money.ep && money.ep > 0) parts.push(`${money.ep} PE`)
+  if (money.sp && money.sp > 0) parts.push(`${money.sp} PP`)
+  if (money.cp && money.cp > 0) parts.push(`${money.cp} PC`)
+  
+  return parts.length > 0 ? parts.join(', ') : 'Sem dinheiro'
+}
 
   const getTotalWeight = (char: typeof userCharacters[0]) => {
-    return char.inventory.reduce((acc, item) => {
+  return (char.inventory || []).reduce((acc, item) => {
       return acc + (item.weight ?? 0) * (item.quantity ?? 1)
     }, 0)
   }

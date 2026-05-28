@@ -2,7 +2,7 @@
 
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { campaign, campaignMember, user, character } from '@/lib/db/schema'
+import { campaign, campaignMember, user, characters } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
 import { headers } from 'next/headers'
 import { revalidatePath } from 'next/cache'
@@ -134,21 +134,25 @@ export async function getCampaignCharacters(campaignId: string) {
   if (!member.length) throw new Error('Acesso negado')
 
   return db.select({
-    id: character.id,
-    name: character.name,
-    race: character.race,
-    characterClass: character.characterClass,
-    level: character.level,
-    hitPointsCurrent: character.hitPointsCurrent,
-    hitPointsMax: character.hitPointsMax,
-    armorClass: character.armorClass,
-    portrait: character.portrait,
-    userId: character.userId,
+    id: characters.id,
+    name: characters.name,
+    race: characters.race,
+    
+    // O GRANDE MISTÉRIO RESOLVIDO:
+    // O Frontend espera "characterClass", mas no banco se chama "class"
+    characterClass: characters.class, 
+    
+    level: characters.level,
+    hitPointsCurrent: characters.hitPointsCurrent,
+    hitPointsMax: characters.hitPointsMax,
+    armorClass: characters.armorClass,
+    portrait: characters.portrait,
+    userId: characters.userId,
     userName: user.name,
   })
-    .from(character)
-    .innerJoin(user, eq(character.userId, user.id))
-    .where(eq(character.campaignId, campaignId))
+    .from(characters)
+    .innerJoin(user, eq(characters.userId, user.id))
+    .where(eq(characters.campaignId, campaignId))
 }
 
 export async function isMaster(campaignId: string) {
@@ -178,9 +182,9 @@ export async function leaveCampaign(campaignId: string) {
     .where(and(eq(campaignMember.campaignId, campaignId), eq(campaignMember.userId, userId)))
 
   // Remove personagens do jogador dessa campanha
-  await db.update(character)
+  await db.update(characters)
     .set({ campaignId: null })
-    .where(and(eq(character.campaignId, campaignId), eq(character.userId, userId)))
+    .where(and(eq(characters.campaignId, campaignId), eq(characters.userId, userId)))
 
   revalidatePath('/dashboard')
   revalidatePath('/dashboard/campaigns')
@@ -194,9 +198,9 @@ export async function deleteCampaign(campaignId: string) {
   if (!isMasterResult) throw new Error('Apenas o mestre pode deletar a campanha')
 
   // Remove todos os personagens da campanha
-  await db.update(character)
+  await db.update(characters)
     .set({ campaignId: null })
-    .where(eq(character.campaignId, campaignId))
+    .where(eq(characters.campaignId, campaignId))
 
   await db.delete(campaign).where(eq(campaign.id, campaignId))
 

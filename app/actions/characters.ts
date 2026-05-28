@@ -7,7 +7,7 @@ import { eq, desc, and } from 'drizzle-orm'
 import { headers } from 'next/headers'
 import { revalidatePath } from 'next/cache'
 import { nanoid } from 'nanoid'
-import type { NewCharacter, Character } from '@/lib/db/schema'
+import type { Newcharacters, characters as CharactersType } from '@/lib/db/schema'
 
 async function getUserId() {
   const session = await auth.api.getSession({ headers: await headers() })
@@ -19,23 +19,23 @@ export async function getCharacters() {
   const userId = await getUserId()
   return db
     .select()
-    .from(character)
-    .where(eq(character.userId, userId))
-    .orderBy(desc(character.updatedAt))
+    .from(characters)
+    .where(eq(characters.userId, userId))
+    .orderBy(desc(characters.updatedAt))
 }
 
 export async function getCharacter(id: string) {
   const userId = await getUserId()
   const results = await db
     .select()
-    .from(character)
-    .where(and(eq(character.id, id), eq(character.userId, userId)))
+    .from(characters)
+    .where(and(eq(characters.id, id), eq(characters.userId, userId)))
     .limit(1)
   return results[0] ?? null
 }
 
 // Calcula HP baseado na classe
-function getHitDiceByClass(characterClass: string): string {
+function getHitDiceByClass(charactersClass: string): string {
   const hitDice: Record<string, string> = {
     'Bárbaro': 'd12',
     'Guerreiro': 'd10',
@@ -50,7 +50,7 @@ function getHitDiceByClass(characterClass: string): string {
     'Feiticeiro': 'd6',
     'Mago': 'd6',
   }
-  return hitDice[characterClass] || 'd8'
+  return hitDice[charactersClass] || 'd8'
 }
 
 function getHitDiceMax(hitDice: string): number {
@@ -61,7 +61,7 @@ function getHitDiceMax(hitDice: string): number {
 export async function createCharacter(data: {
   name: string
   race: string
-  characterClass: string
+  charactersClass: string
   level?: number
   background?: string
   campaignId?: string
@@ -70,19 +70,19 @@ export async function createCharacter(data: {
   const userId = await getUserId()
   const id = nanoid()
   const level = data.level ?? 1
-  const hitDice = getHitDiceByClass(data.characterClass)
+  const hitDice = getHitDiceByClass(data.charactersClass)
   const hitDiceMax = getHitDiceMax(hitDice)
   const attrs = data.attributes ?? { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }
   const conMod = Math.floor((attrs.con - 10) / 2)
   const baseHP = hitDiceMax + conMod
   
-  const newCharacter: NewCharacter = {
+  const newCharacter: Newcharacters = {
     id,
     userId,
     campaignId: data.campaignId ?? null,
     name: data.name,
     race: data.race,
-    characterClass: data.characterClass,
+    charactersClass: data.charactersClass,
     level,
     background: data.background,
     hitPointsMax: baseHP,
@@ -92,19 +92,19 @@ export async function createCharacter(data: {
     proficiencyBonus: Math.floor((level - 1) / 4) + 2,
   }
   
-  await db.insert(character).values(newCharacter)
+  await db.insert(characters).values(newCharacter)
   revalidatePath('/dashboard')
   revalidatePath('/dashboard/characters')
   return { id }
 }
 
-export async function updateCharacter(id: string, data: Partial<NewCharacter>) {
+export async function updateCharacter(id: string, data: Partial<Newcharacters>) {
   const userId = await getUserId()
   
   await db
-    .update(character)
+    .update(characters)
     .set({ ...data, updatedAt: new Date() })
-    .where(and(eq(character.id, id), eq(character.userId, userId)))
+    .where(and(eq(characters.id, id), eq(characters.userId, userId)))
   
   revalidatePath(`/dashboard/characters/${id}`)
   revalidatePath('/dashboard')
@@ -112,49 +112,13 @@ export async function updateCharacter(id: string, data: Partial<NewCharacter>) {
 
 export async function deleteCharacter(id: string) {
   const userId = await getUserId()
-  
+
   await db
-    .delete(character)
-    .where(and(eq(character.id, id), eq(character.userId, userId)))
-  
+    .delete(characters)
+    .where(and(eq(characters.id, id), eq(characters.userId, userId)))
+
   revalidatePath('/dashboard')
   revalidatePath('/dashboard/characters')
-}
-
-export async function updateCharacterSpells(
-  id: string,
-  knownSpells: string[],
-  preparedSpells: string[]
-) {
-  const userId = await getUserId()
-  
-  await db
-    .update(character)
-    .set({ 
-      knownSpells, 
-      preparedSpells,
-      updatedAt: new Date() 
-    })
-    .where(and(eq(character.id, id), eq(character.userId, userId)))
-  
-  revalidatePath(`/dashboard/characters/${id}`)
-}
-
-export async function updateSpellSlots(
-  id: string,
-  spellSlotsUsed: Record<string, number>
-) {
-  const userId = await getUserId()
-  
-  await db
-    .update(character)
-    .set({ 
-      spellSlotsUsed,
-      updatedAt: new Date() 
-    })
-    .where(and(eq(character.id, id), eq(character.userId, userId)))
-  
-  revalidatePath(`/dashboard/characters/${id}`)
 }
 
 export async function updateCharacterHP(
@@ -165,95 +129,13 @@ export async function updateCharacterHP(
   const userId = await getUserId()
   
   await db
-    .update(character)
+    .update(characters)
     .set({ 
       hitPointsCurrent,
       ...(hitPointsTemp !== undefined ? { hitPointsTemp } : {}),
       updatedAt: new Date() 
     })
-    .where(and(eq(character.id, id), eq(character.userId, userId)))
-  
-  revalidatePath(`/dashboard/characters/${id}`)
-}
-
-export async function updateDeathSaves(
-  id: string,
-  deathSaves: { success: boolean[]; failure: boolean[] }
-) {
-  const userId = await getUserId()
-  
-  await db
-    .update(character)
-    .set({ 
-      deathSaves,
-      updatedAt: new Date() 
-    })
-    .where(and(eq(character.id, id), eq(character.userId, userId)))
-  
-  revalidatePath(`/dashboard/characters/${id}`)
-}
-
-export async function updateConditions(
-  id: string,
-  conditions: string[]
-) {
-  const userId = await getUserId()
-  
-  await db
-    .update(character)
-    .set({ 
-      conditions,
-      updatedAt: new Date() 
-    })
-    .where(and(eq(character.id, id), eq(character.userId, userId)))
-  
-  revalidatePath(`/dashboard/characters/${id}`)
-}
-
-export async function toggleInspiration(id: string, inspiration: boolean) {
-  const userId = await getUserId()
-  
-  await db
-    .update(character)
-    .set({ 
-      inspiration,
-      updatedAt: new Date() 
-    })
-    .where(and(eq(character.id, id), eq(character.userId, userId)))
-  
-  revalidatePath(`/dashboard/characters/${id}`)
-}
-
-export async function updateInventory(
-  id: string,
-  inventory: Array<{ id: string; name: string; quantity: number; weight: number; description?: string }>
-) {
-  const userId = await getUserId()
-  
-  await db
-    .update(character)
-    .set({ 
-      inventory,
-      updatedAt: new Date() 
-    })
-    .where(and(eq(character.id, id), eq(character.userId, userId)))
-  
-  revalidatePath(`/dashboard/characters/${id}`)
-}
-
-export async function updateCurrency(
-  id: string,
-  currency: { pp: number; gp: number; ep: number; sp: number; cp: number }
-) {
-  const userId = await getUserId()
-  
-  await db
-    .update(character)
-    .set({ 
-      currency,
-      updatedAt: new Date() 
-    })
-    .where(and(eq(character.id, id), eq(character.userId, userId)))
+    .where(and(eq(characters.id, id), eq(characters.userId, userId)))
   
   revalidatePath(`/dashboard/characters/${id}`)
 }
@@ -265,12 +147,12 @@ export async function updateAttributes(
   const userId = await getUserId()
   
   await db
-    .update(character)
+    .update(characters)
     .set({ 
       attributes,
       updatedAt: new Date() 
     })
-    .where(and(eq(character.id, id), eq(character.userId, userId)))
+    .where(and(eq(characters.id, id), eq(characters.userId, userId)))
   
   revalidatePath(`/dashboard/characters/${id}`)
 }
@@ -279,12 +161,12 @@ export async function updateSavingThrowProfs(id: string, savingThrowProfs: strin
   const userId = await getUserId()
   
   await db
-    .update(character)
+    .update(characters)
     .set({ 
       savingThrowProfs,
       updatedAt: new Date() 
     })
-    .where(and(eq(character.id, id), eq(character.userId, userId)))
+    .where(and(eq(characters.id, id), eq(characters.userId, userId)))
   
   revalidatePath(`/dashboard/characters/${id}`)
 }
@@ -293,32 +175,41 @@ export async function updateSkillProfs(id: string, skillProfs: string[], expertS
   const userId = await getUserId()
   
   await db
-    .update(character)
+    .update(characters)
     .set({ 
       skillProfs,
       expertSkills,
       updatedAt: new Date() 
     })
-    .where(and(eq(character.id, id), eq(character.userId, userId)))
+    .where(and(eq(characters.id, id), eq(characters.userId, userId)))
   
   revalidatePath(`/dashboard/characters/${id}`)
 }
 
-export async function useHitDice(id: string) {
+export async function updateConditions(id: string, conditions: string[]) {
   const userId = await getUserId()
-  const char = await getCharacter(id)
-  if (!char) throw new Error('Personagem não encontrado')
-  
-  const hitDiceUsed = (char.hitDiceUsed ?? 0) + 1
-  if (hitDiceUsed > char.level) throw new Error('Sem dados de vida disponíveis')
   
   await db
-    .update(character)
+    .update(characters)
     .set({ 
-      hitDiceUsed,
+      conditions,
       updatedAt: new Date() 
     })
-    .where(and(eq(character.id, id), eq(character.userId, userId)))
+    .where(and(eq(characters.id, id), eq(characters.userId, userId)))
+  
+  revalidatePath(`/dashboard/characters/${id}`)
+}
+
+export async function toggleInspiration(id: string, inspiration: boolean) {
+  const userId = await getUserId()
+  
+  await db
+    .update(characters)
+    .set({ 
+      inspiration,
+      updatedAt: new Date() 
+    })
+    .where(and(eq(characters.id, id), eq(characters.userId, userId)))
   
   revalidatePath(`/dashboard/characters/${id}`)
 }
@@ -333,7 +224,7 @@ export async function longRest(id: string) {
   const newHitDiceUsed = Math.max(0, (char.hitDiceUsed ?? 0) - hitDiceRecovered)
   
   await db
-    .update(character)
+    .update(characters)
     .set({ 
       hitPointsCurrent: char.hitPointsMax,
       hitPointsTemp: 0,
@@ -342,7 +233,7 @@ export async function longRest(id: string) {
       deathSaves: { success: [false, false, false], failure: [false, false, false] },
       updatedAt: new Date() 
     })
-    .where(and(eq(character.id, id), eq(character.userId, userId)))
+    .where(and(eq(characters.id, id), eq(characters.userId, userId)))
   
   revalidatePath(`/dashboard/characters/${id}`)
 }
@@ -353,11 +244,121 @@ export async function shortRest(id: string) {
   // Short rest não recupera slots automaticamente, 
   // apenas permite usar dados de vida
   await db
-    .update(character)
+    .update(characters)
     .set({ 
       updatedAt: new Date() 
     })
-    .where(and(eq(character.id, id), eq(character.userId, userId)))
+    .where(and(eq(characters.id, id), eq(characters.userId, userId)))
+  
+  revalidatePath(`/dashboard/characters/${id}`)
+}
+
+export async function useHitDice(id: string) {
+  const userId = await getUserId()
+  const char = await getCharacter(id)
+  if (!char) throw new Error('Personagem não encontrado')
+  
+  const hitDiceUsed = (char.hitDiceUsed ?? 0) + 1
+  if (hitDiceUsed > char.level) throw new Error('Sem dados de vida disponíveis')
+  
+  await db
+    .update(characters)
+    .set({ 
+      hitDiceUsed,
+      updatedAt: new Date() 
+    })
+    .where(and(eq(characters.id, id), eq(characters.userId, userId)))
+  
+  revalidatePath(`/dashboard/characters/${id}`)
+}
+
+export async function updateDeathSaves(
+  id: string,
+  deathSaves: { success: boolean[]; failure: boolean[] }
+) {
+  const userId = await getUserId()
+  
+  await db
+    .update(characters)
+    .set({ 
+      deathSaves,
+      updatedAt: new Date() 
+    })
+    .where(and(eq(characters.id, id), eq(characters.userId, userId)))
+  
+  revalidatePath(`/dashboard/characters/${id}`)
+}
+
+// ==========================================
+// EXTRAS: Outras funções do arquivo padronizadas
+// ==========================================
+
+export async function updateCharacterSpells(
+  id: string,
+  knownSpells: string[],
+  preparedSpells: string[]
+) {
+  const userId = await getUserId()
+  
+  await db
+    .update(characters)
+    .set({ 
+      knownSpells, 
+      preparedSpells,
+      updatedAt: new Date() 
+    })
+    .where(and(eq(characters.id, id), eq(characters.userId, userId)))
+  
+  revalidatePath(`/dashboard/characters/${id}`)
+}
+
+export async function updateSpellSlots(
+  id: string,
+  spellSlotsUsed: Record<string, number>
+) {
+  const userId = await getUserId()
+  
+  await db
+    .update(characters)
+    .set({ 
+      spellSlotsUsed,
+      updatedAt: new Date() 
+    })
+    .where(and(eq(characters.id, id), eq(characters.userId, userId)))
+  
+  revalidatePath(`/dashboard/characters/${id}`)
+}
+
+export async function updateInventory(
+  id: string,
+  inventory: Array<{ id: string; name: string; quantity: number; weight: number; description?: string }>
+) {
+  const userId = await getUserId()
+  
+  await db
+    .update(characters)
+    .set({ 
+      inventory,
+      updatedAt: new Date() 
+    })
+    .where(and(eq(characters.id, id), eq(characters.userId, userId)))
+  
+  revalidatePath(`/dashboard/characters/${id}`)
+}
+
+export async function updateCurrency(
+  id: string,
+  currency: { pp: number; gp: number; ep: number; sp: number; cp: number }
+) {
+  const userId = await getUserId()
+  
+  await db
+    .update(characters)
+    .set({ 
+      currency,
+      updatedAt: new Date() 
+    })
+    .where(and(eq(characters.id, id), eq(characters.userId, userId)))
   
   revalidatePath(`/dashboard/characters/${id}`)
 }
