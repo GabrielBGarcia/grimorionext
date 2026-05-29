@@ -3,7 +3,7 @@
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { campaign, campaignMember, user, characters } from '@/lib/db/schema'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, inArray } from 'drizzle-orm'
 import { headers } from 'next/headers'
 import { revalidatePath } from 'next/cache'
 import { nanoid } from 'nanoid'
@@ -14,8 +14,9 @@ async function getSession() {
   return session
 }
 
+// ✅ nanoid é criptograficamente seguro (era Math.random antes)
 function generateInviteCode() {
-  return Math.random().toString(36).substring(2, 8).toUpperCase()
+  return nanoid(6).toUpperCase()
 }
 
 export async function createCampaign(data: { name: string; description?: string }) {
@@ -25,7 +26,8 @@ export async function createCampaign(data: { name: string; description?: string 
   const inviteCode = generateInviteCode()
 
   await db.insert(campaign).values({
-    id, masterId: userId,
+    id,
+    masterId: userId,
     name: data.name,
     description: data.description,
     inviteCode,
@@ -45,34 +47,44 @@ export async function getMyCampaigns() {
   const session = await getSession()
   const userId = session.user.id
 
-  const members = await db.select().from(campaignMember)
+  const members = await db
+    .select()
+    .from(campaignMember)
     .where(eq(campaignMember.userId, userId))
 
   const campaignIds = members.map(m => m.campaignId)
   if (!campaignIds.length) return []
 
-  const campaigns = await Promise.all(
-    campaignIds.map(async cid => {
-      const result = await db.select().from(campaign).where(eq(campaign.id, cid)).limit(1)
-      const camp = result[0]
-      if (!camp) return null
-      const member = members.find(m => m.campaignId === cid)
-      return { ...camp, role: member?.role }
-    })
-  )
-  return campaigns.filter(Boolean)
+  // ✅ Uma única query com IN em vez de N queries paralelas
+  const campaigns = await db
+    .select()
+    .from(campaign)
+    .where(inArray(campaign.id, campaignIds))
+
+  return campaigns.map(camp => {
+    const member = members.find(m => m.campaignId === camp.id)
+    return { ...camp, role: member?.role }
+  })
 }
 
 export async function getCampaign(id: string) {
   const session = await getSession()
   const userId = session.user.id
 
-  const member = await db.select().from(campaignMember)
+  const member = await db
+    .select()
+    .from(campaignMember)
     .where(and(eq(campaignMember.campaignId, id), eq(campaignMember.userId, userId)))
     .limit(1)
+
   if (!member.length) throw new Error('Acesso negado')
 
-  const result = await db.select().from(campaign).where(eq(campaign.id, id)).limit(1)
+  const result = await db
+    .select()
+    .from(campaign)
+    .where(eq(campaign.id, id))
+    .limit(1)
+
   return result[0] ?? null
 }
 
@@ -80,17 +92,22 @@ export async function joinCampaign(inviteCode: string) {
   const session = await getSession()
   const userId = session.user.id
 
-  const result = await db.select().from(campaign)
+  const result = await db
+    .select()
+    .from(campaign)
     .where(and(eq(campaign.inviteCode, inviteCode.toUpperCase()), eq(campaign.isActive, true)))
     .limit(1)
+
   if (!result.length) throw new Error('Código inválido ou campanha inativa')
 
   const camp = result[0]
 
-  // Verificar se já é membro
-  const existing = await db.select().from(campaignMember)
+  const existing = await db
+    .select()
+    .from(campaignMember)
     .where(and(eq(campaignMember.campaignId, camp.id), eq(campaignMember.userId, userId)))
     .limit(1)
+
   if (existing.length) throw new Error('Você já faz parte dessa campanha')
 
   await db.insert(campaignMember).values({
@@ -106,19 +123,23 @@ export async function getCampaignMembers(campaignId: string) {
   const session = await getSession()
   const userId = session.user.id
 
-  const member = await db.select().from(campaignMember)
+  const member = await db
+    .select()
+    .from(campaignMember)
     .where(and(eq(campaignMember.campaignId, campaignId), eq(campaignMember.userId, userId)))
     .limit(1)
+
   if (!member.length) throw new Error('Acesso negado')
 
-  return db.select({
-    id: campaignMember.id,
-    role: campaignMember.role,
-    joinedAt: campaignMember.joinedAt,
-    odUserId: user.id,
-    userName: user.name,
-    userEmail: user.email,
-  })
+  return db
+    .select({
+      id: campaignMember.id,
+      role: campaignMember.role,
+      joinedAt: campaignMember.joinedAt,
+      odUserId: user.id,
+      userName: user.name,
+      userEmail: user.email,
+    })
     .from(campaignMember)
     .innerJoin(user, eq(campaignMember.userId, user.id))
     .where(eq(campaignMember.campaignId, campaignId))
@@ -128,28 +149,28 @@ export async function getCampaignCharacters(campaignId: string) {
   const session = await getSession()
   const userId = session.user.id
 
-  const member = await db.select().from(campaignMember)
+  const member = await db
+    .select()
+    .from(campaignMember)
     .where(and(eq(campaignMember.campaignId, campaignId), eq(campaignMember.userId, userId)))
     .limit(1)
+
   if (!member.length) throw new Error('Acesso negado')
 
-  return db.select({
-    id: characters.id,
-    name: characters.name,
-    race: characters.race,
-    
-    // O GRANDE MISTÉRIO RESOLVIDO:
-    // O Frontend espera "characterClass", mas no banco se chama "class"
-    characterClass: characters.class, 
-    
-    level: characters.level,
-    hitPointsCurrent: characters.hitPointsCurrent,
-    hitPointsMax: characters.hitPointsMax,
-    armorClass: characters.armorClass,
-    portrait: characters.portrait,
-    userId: characters.userId,
-    userName: user.name,
-  })
+  return db
+    .select({
+      id: characters.id,
+      name: characters.name,
+      race: characters.race,
+      characterClass: characters.class,
+      level: characters.level,
+      hitPointsCurrent: characters.hitPointsCurrent,
+      hitPointsMax: characters.hitPointsMax,
+      armorClass: characters.armorClass,
+      portrait: characters.portrait,
+      userId: characters.userId,
+      userName: user.name,
+    })
     .from(characters)
     .innerJoin(user, eq(characters.userId, user.id))
     .where(eq(characters.campaignId, campaignId))
@@ -158,12 +179,17 @@ export async function getCampaignCharacters(campaignId: string) {
 export async function isMaster(campaignId: string) {
   const session = await getSession()
   const userId = session.user.id
-  const result = await db.select().from(campaignMember)
+
+  const result = await db
+    .select()
+    .from(campaignMember)
     .where(and(
       eq(campaignMember.campaignId, campaignId),
       eq(campaignMember.userId, userId),
       eq(campaignMember.role, 'master'),
-    )).limit(1)
+    ))
+    .limit(1)
+
   return result.length > 0
 }
 
@@ -171,18 +197,21 @@ export async function leaveCampaign(campaignId: string) {
   const session = await getSession()
   const userId = session.user.id
 
-  const member = await db.select().from(campaignMember)
+  const member = await db
+    .select()
+    .from(campaignMember)
     .where(and(eq(campaignMember.campaignId, campaignId), eq(campaignMember.userId, userId)))
     .limit(1)
 
   if (!member.length) throw new Error('Você não faz parte dessa campanha')
   if (member[0].role === 'master') throw new Error('O mestre não pode sair da campanha')
 
-  await db.delete(campaignMember)
+  await db
+    .delete(campaignMember)
     .where(and(eq(campaignMember.campaignId, campaignId), eq(campaignMember.userId, userId)))
 
-  // Remove personagens do jogador dessa campanha
-  await db.update(characters)
+  await db
+    .update(characters)
     .set({ campaignId: null })
     .where(and(eq(characters.campaignId, campaignId), eq(characters.userId, userId)))
 
@@ -197,8 +226,8 @@ export async function deleteCampaign(campaignId: string) {
   const isMasterResult = await isMaster(campaignId)
   if (!isMasterResult) throw new Error('Apenas o mestre pode deletar a campanha')
 
-  // Remove todos os personagens da campanha
-  await db.update(characters)
+  await db
+    .update(characters)
     .set({ campaignId: null })
     .where(eq(characters.campaignId, campaignId))
 
